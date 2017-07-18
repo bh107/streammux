@@ -6,6 +6,7 @@ import (
 	"syscall"
 )
 
+// DedicatedParity is a redundancy behavior with a stripe and a parity device similar to RAID-4.
 type DedicatedParity struct {
 	sync.Mutex
 
@@ -30,13 +31,34 @@ func NewDedicatedParity(parity io.ReadWriteCloser, stripe []io.ReadWriteCloser, 
 	return dp
 }
 
-func (dp *DedicatedParity) Open() {
+func (dp *DedicatedParity) Health() State {
+	return dp.state
+}
+
+func (dp *DedicatedParity) Open() State {
 	dp.Lock()
 
+	var failed bool
+
 	for _, rwc := range append(dp.stripe, dp.parity) {
-		rwc.Open()
+		state := rwc.Open()
+		switch state {
+		case FAILED:
+			if failed {
+				dp.state = FAILED
+			} else {
+				dp.state = DEGRADED
+			}
+		case DEGRADED:
+			if dp.state == FAILED {
+				break
+			}
+
+			dp.state = DEGRADED
+		}
 	}
 
+	return dp.state
 }
 
 func (dp *DedicatedParity) Close() (err error) {
@@ -54,26 +76,34 @@ func (dp *DedicatedParity) Close() (err error) {
 func (dp *DedicatedParity) Read(p []byte) (n int, err error) {
 	// THIS IS PRETTY HAIRY STUFF
 
+	// bail out if we're already marked as FAILED
 	if dp.state == FAILED {
 		return 0, syscall.EIO
 	}
 
+	// create a channel for I/O requests
 	ch := make(chan rwT)
 
+	// an esoteric counter (to get a nice range loop later)
 	var active []struct{}
 
 	stripe := split(p, len(dp.stripe))
 	reconstructIdx := -1
 
+	// loop over all members (stripe members and the parity member)
 	for i, reader := range append(dp.stripe, dp.parity) {
+		// check if the member is failed and record the index
 		if reader.State() != OK {
 			reconstructIdx = i
 
+			// don't issue a read request to this member if not OK
 			continue
 		}
 
+		// issue the read request in a seperate process
 		go reader.read(i, make([]byte, len(p)/len(dp.stripe)), ch)
 
+		// record that we issues a request and must get an answer
 		active = append(active, struct{}{})
 	}
 
@@ -87,10 +117,14 @@ func (dp *DedicatedParity) Read(p []byte) (n int, err error) {
 
 		if err != nil && err != io.EOF {
 			if dp.state == DEGRADED {
+				// if already DEGRADED mark us as FAILED
 				dp.state = FAILED
 			} else {
+				// if not, just mark us DEGRADED and record the index to reconstruct
 				dp.state = DEGRADED
 				reconstructIdx = rc.idx
+
+				// mark the correct stripe member or the parity member
 				if rc.idx == len(dp.stripe) {
 					dp.parity.SetState(FAILED)
 				} else {

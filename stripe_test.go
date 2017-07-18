@@ -90,34 +90,30 @@ func TestStripe(t *testing.T) {
 
 func TestFailingStripeWithSparePool(t *testing.T) {
 	blkdevs := []io.ReadWriteCloser{
-		testutil.NewBlockDevice(16),
-		testutil.NewFaultyDevice(16, 1),
+		testutil.NewBlockDevice(1 << 20),
+		testutil.NewFaultyDevice(1<<20, 1),
 	}
 
 	sparePool := streammux.NewSparePool([]io.ReadWriteCloser{
-		testutil.NewBlockDevice(16),
-		testutil.NewBlockDevice(16),
+		testutil.NewBlockDevice(1 << 20),
+		testutil.NewBlockDevice(1 << 20),
 	})
 
 	s := streammux.NewStripe(blkdevs, streammux.WithSparePool(sparePool))
 
-	data := []byte("locorocolocorocolocorocolocoroco")
-
 	s.Open()
 
-	/*
-		data := make([]byte, 1<<21)
+	data := make([]byte, 1<<21)
 
-		f, err := os.Open("/dev/urandom")
-		if err != nil {
-			t.Fatal(err)
-		}
+	f, err := os.Open("/dev/urandom")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		n, err := f.Read(data)
-		if err != nil || n != len(data) {
-			t.Fatal(err)
-		}
-	*/
+	n, err := f.Read(data)
+	if err != nil || n != len(data) {
+		t.Fatal(err)
+	}
 
 	origSha256Sum := sha256.Sum256(data)
 

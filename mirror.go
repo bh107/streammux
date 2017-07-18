@@ -2,6 +2,7 @@ package streammux
 
 import (
 	"io"
+	"log"
 	"sync"
 	"syscall"
 )
@@ -14,8 +15,6 @@ type Mirror struct {
 
 	replaced chan int
 	state    State
-
-	spares *SparePool
 }
 
 func NewMirror(ios ...io.ReadWriteCloser) *Mirror {
@@ -33,16 +32,39 @@ func NewMirror(ios ...io.ReadWriteCloser) *Mirror {
 	return mirror
 }
 
-func (m *Mirror) SetSparePool(sp *SparePool) {
-	m.spares = sp
+func (m *Mirror) Health() State {
+	return m.state
 }
 
-func (m *Mirror) Open() {
+func (m *Mirror) Open() State {
 	m.Lock()
 
+	// reset state
+	m.state = OK
+
+	// we need at least one operational member to not be in state FAILED
+	var numFailed int
+
 	for _, rwc := range m.ios {
-		rwc.Open()
+		state := rwc.Open()
+
+		switch state {
+		case DEGRADED:
+			// if the member is degraded that is ok, the mirror is then also just degraded
+			m.state = DEGRADED
+		case FAILED:
+			// if a member is failed, we mark as degraded
+			m.state = DEGRADED
+
+			// then check if we have too many failures
+			numFailed++
+			if numFailed == len(m.ios) {
+				m.state = FAILED
+			}
+		}
 	}
+
+	return m.state
 }
 
 func (m *Mirror) Close() (err error) {
@@ -168,6 +190,11 @@ func (m *Mirror) Write(p []byte) (n int, err error) {
 func (m *Mirror) Replace(idx int, rwc io.ReadWriteCloser) {
 	m.Open()
 
+	// close the existing member
+	if err := m.ios[idx].Close(); err != nil {
+		panic(err)
+	}
+
 	m.ios[idx] = NewMember(rwc)
 
 	m.ios[idx].Open()
@@ -199,7 +226,7 @@ func (m *Mirror) Sync() {
 
 				_ = written
 
-				//log.Printf("finished rebuilding, copied %d bytes", written)
+				log.Printf("finished rebuilding, copied %d bytes", written)
 
 				m.ios[idx].SetState(OK)
 

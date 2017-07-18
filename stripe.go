@@ -51,6 +51,10 @@ type Stripe struct {
 	state State
 }
 
+func (s *Stripe) Health() State {
+	return s.state
+}
+
 func NewStripe(rwcs []io.ReadWriteCloser, opts ...MemberOption) *Stripe {
 	stripe := &Stripe{
 		ios: make([]*Member, len(rwcs)),
@@ -63,12 +67,25 @@ func NewStripe(rwcs []io.ReadWriteCloser, opts ...MemberOption) *Stripe {
 	return stripe
 }
 
-func (s *Stripe) Open() {
+func (s *Stripe) Open() State {
 	s.Lock()
 
 	for _, rwc := range s.ios {
-		rwc.Open()
+		state := rwc.Open()
+		switch state {
+		case FAILED:
+			// we're done for
+			s.state = FAILED
+		case DEGRADED:
+			if s.state == FAILED {
+				break
+			}
+
+			s.state = DEGRADED
+		}
 	}
+
+	return s.state
 }
 
 func (s *Stripe) Close() (err error) {

@@ -35,6 +35,7 @@ type segment struct {
 	upto int
 }
 
+// rwT represents an I/O request
 type rwT struct {
 	idx int
 	p   []byte
@@ -68,21 +69,22 @@ func (m *Member) SetState(state State) {
 	m.state = state
 }
 
-func (m *Member) Open() {
+func (m *Member) Open() State {
 	m.rwc = m.segments[0].rwc
 	m.pos = 0
 	m.upto = m.segments[0].upto
 	m.currentSegment = 0
 
 	if opener, ok := m.rwc.(Opener); ok {
-		opener.Open()
+		// call the underlying member and record the state
+		m.state = opener.Open()
 	}
+
+	return m.state
 }
 
 func (m *Member) Close() error {
-	m.rwc.Close()
-
-	return nil
+	return m.rwc.Close()
 }
 
 func (m *Member) write(idx int, p []byte, ch chan rwT) {
