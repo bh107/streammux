@@ -88,7 +88,7 @@ func (m *Member) Close() error {
 }
 
 func (m *Member) write(idx int, p []byte, ch chan rwT) {
-	if m.state != OK {
+	if m.state == FAILED {
 		ch <- rwT{idx, p, 0, syscall.EIO}
 		return
 	}
@@ -130,7 +130,7 @@ func (m *Member) write(idx int, p []byte, ch chan rwT) {
 }
 
 func (m *Member) read(idx int, p []byte, ch chan rwT) {
-	if m.state != OK {
+	if m.state == FAILED {
 		ch <- rwT{idx, p, 0, syscall.EIO}
 		return
 	}

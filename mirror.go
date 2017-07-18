@@ -105,7 +105,6 @@ func (m *Mirror) Read(p []byte) (n int, err error) {
 		if rc.err != nil && rc.err != io.EOF {
 			if len(active) > 1 {
 				m.state = DEGRADED
-				//log.Print("mirror DEGRADED")
 			} else {
 				m.state = FAILED
 			}
