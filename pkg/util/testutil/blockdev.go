@@ -83,7 +83,7 @@ func (blk *BlockDevice) Write(p []byte) (n int, err error) {
 	blk.pos += n
 
 	if n < len(p) {
-		return n, io.EOF
+		return n, syscall.ENOSPC
 	}
 
 	return n, nil

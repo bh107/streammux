@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"io"
+	"syscall"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestBlockdev(t *testing.T) {
 
 	// next write must fail with EOF, but proceed to write 4 bytes
 	n, err := blkdev.Write([]byte("locoroco"))
-	if err != io.EOF {
+	if err != syscall.ENOSPC {
 		t.Fatal(err)
 	}
 
